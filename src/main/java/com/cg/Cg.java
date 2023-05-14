@@ -1,4 +1,4 @@
-package com.example;
+package com.cg;
 
 import com.google.inject.Provides;
 import javax.inject.Inject;
@@ -16,7 +16,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 @PluginDescriptor(
 	name = "Example"
 )
-public class ExamplePlugin extends Plugin
+public class Cg extends Plugin
 {
 	@Inject
 	private Client client;
