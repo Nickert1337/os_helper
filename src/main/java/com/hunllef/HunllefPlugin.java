@@ -233,7 +233,7 @@ public class HunllefPlugin extends Plugin
 			Widget activeWidget = getActiveWidget();
 
 			// Prayer icon
-			Widget PRAYER_ICON = client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 67);
+			Widget PRAYER_ICON = client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 70);
 
 			executorService.submit(() -> clickAndDrawPoint(PRAYER_ICON, false));
 
@@ -317,37 +317,37 @@ public class HunllefPlugin extends Plugin
 		Widget COMBAT = client.getWidget(WidgetID.COMBAT_GROUP_ID, 0);
 
 		if (COMBAT != null && !COMBAT.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 62);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 58);
 
 		Widget SKILLS = client.getWidget(WidgetID.SKILLS_GROUP_ID, 0);
 
 		if (SKILLS != null && !SKILLS.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 63);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 59);
 
 		Widget INVENTORY = client.getWidget(WidgetID.INVENTORY_GROUP_ID, 0);
 
 		if (INVENTORY != null && !INVENTORY.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 65);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 61);
 
 		Widget QUESTS = client.getWidget(WidgetID.QUESTLIST_GROUP_ID, 0);
 
 		if (QUESTS != null && !QUESTS.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 64);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 60);
 
 		Widget EQUIPMENT = client.getWidget(WidgetID.EQUIPMENT_GROUP_ID, 0);
 
 		if (EQUIPMENT != null && !EQUIPMENT.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 66);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 62);
 
 		Widget PRAYER = client.getWidget(WidgetID.PRAYER_GROUP_ID, 0);
 
 		if (PRAYER != null && !PRAYER.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 67);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 63);
 
 		Widget SPELLBOOK = client.getWidget(WidgetID.SPELLBOOK_GROUP_ID, 0);
 
 		if (SPELLBOOK != null && !SPELLBOOK.isHidden())
-			return client.getWidget(WidgetID.FIXED_VIEWPORT_GROUP_ID, 68);
+			return client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 64);
 
 		return null;
 	}
