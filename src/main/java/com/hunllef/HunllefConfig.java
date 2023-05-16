@@ -61,4 +61,15 @@ public interface HunllefConfig extends Config
 	{
 		return 10;
 	}
+
+	@ConfigItem(
+			position = 6,
+			keyName = "prayer",
+			name = "Auto dmg prayers",
+			description = ""
+	)
+	default boolean autoDmgPrays()
+	{
+		return true;
+	}
 }

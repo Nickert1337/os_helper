@@ -29,7 +29,6 @@ import javax.swing.SwingUtilities;
 import com.hunllef.utils.ExtUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.HeadIcon;
 import net.runelite.api.Player;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameTick;
@@ -79,6 +78,13 @@ public class HunllefPlugin extends Plugin
 	private Random random = new Random();
 	private AudioMode audioMode;
 
+	private boolean protectFromMissilesActivated = false;
+	private boolean protectFromMagicActivated = false;
+	private int waitTicks = 0;
+
+	private Item lastWeapon = null;
+	private boolean running = false;
+
 	private NavigationButton navigationButton;
 
 	@Override
@@ -127,6 +133,39 @@ public class HunllefPlugin extends Plugin
 			updateNavigationBar(isInInstance, true);
 			wasInInstance = isInInstance;
 		}
+
+		protectFromMissilesActivated = client.getLocalPlayer().getOverheadIcon() == HeadIcon.RANGED;
+		protectFromMagicActivated = client.getLocalPlayer().getOverheadIcon() == HeadIcon.MAGIC;
+
+		log.info("pfr=" + protectFromMissilesActivated + " pfm=" + protectFromMagicActivated);
+		if(waitTicks > 0) {
+			waitTicks--;
+			return;
+		}
+
+		if(running) {
+			Item newWeapon = client.getItemContainer(InventoryID.EQUIPMENT).getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+
+			if (newWeapon != null && (lastWeapon == null || (lastWeapon != null && lastWeapon.getId() != newWeapon.getId()))) {
+				lastWeapon = newWeapon;
+				if ((newWeapon.getId() == ItemID.CRYSTAL_BOW_PERFECTED || newWeapon.getId() == ItemID.CRYSTAL_BOW_ATTUNED || newWeapon.getId() == ItemID.CRYSTAL_BOW_BASIC
+						|| newWeapon.getId() == ItemID.CORRUPTED_BOW_PERFECTED || newWeapon.getId() == ItemID.CORRUPTED_BOW_ATTUNED || newWeapon.getId() == ItemID.CORRUPTED_BOW_BASIC)) {
+					setPrayer("eagle_eye");
+				} else if ((newWeapon.getId() == ItemID.CRYSTAL_STAFF_PERFECTED || newWeapon.getId() == ItemID.CRYSTAL_STAFF_ATTUNED || newWeapon.getId() == ItemID.CRYSTAL_STAFF_BASIC
+						|| newWeapon.getId() == ItemID.CORRUPTED_STAFF_PERFECTED || newWeapon.getId() == ItemID.CORRUPTED_STAFF_ATTUNED || newWeapon.getId() == ItemID.CORRUPTED_STAFF_BASIC)) {
+					setPrayer("mystic_might");
+				}
+			}
+			//}
+
+			if (config.autoPray()) {
+				if (targetPrayer == "magic" && !protectFromMagicActivated) {
+					setPrayer("magic");
+				} else if (targetPrayer == "ranged" && !protectFromMissilesActivated) {
+					setPrayer("ranged");
+				}
+			}
+		}
 	}
 
 	@Subscribe
@@ -160,6 +199,7 @@ public class HunllefPlugin extends Plugin
 
 		executorService = Executors.newSingleThreadScheduledExecutor();
 		executorService.scheduleAtFixedRate(this::tickCounter, 0, COUNTER_INTERVAL, TimeUnit.MILLISECONDS);
+		running = true;
 	}
 
 	public void trample()
@@ -172,6 +212,7 @@ public class HunllefPlugin extends Plugin
 		shutdownExecutorService();
 		panel.setCounterActiveState(false);
 		targetPrayer = "ranged";
+		running = false;
 	}
 
 	@Provides
@@ -180,81 +221,82 @@ public class HunllefPlugin extends Plugin
 		return configManager.getConfig(HunllefConfig.class);
 	}
 
-	private void tickCounter()
-	{
-		counter -= COUNTER_INTERVAL;
-		panel.setTime(counter);
+	private void tickCounter() {
+		try {
+			counter -= COUNTER_INTERVAL;
+			panel.setTime(counter);
 
-		if (counter == 2000)
-		{
-			playSoundClip(SOUND_TWO);
-			return;
-		}
-
-		if (counter == 1000)
-		{
-			playSoundClip(SOUND_ONE);
-			return;
-		}
-
-		/*net.runelite.api.HeadIcon overheadIcon = client.getLocalPlayer().getOverheadIcon();
-		if(targetPrayer == "magic" && overheadIcon != HeadIcon.MAGIC) {
-			setPrayer("magic");
-		} else if(targetPrayer == "ranged" && overheadIcon != HeadIcon.RANGED) {
-			setPrayer("ranged");
-		}*/
-
-		if (counter <= 0)
-		{
-			if (isRanged)
-			{
-				playSoundClip(SOUND_MAGE);
-				panel.setStyle("Mage", Color.CYAN);
-				targetPrayer = "magic";
-				setPrayer("magic");
-			}
-			else
-			{
-				playSoundClip(SOUND_RANGE);
-				panel.setStyle("Ranged", Color.GREEN);
-				targetPrayer = "ranged";
-				setPrayer("ranged");
+			if (counter == 2000) {
+				//playSoundClip(SOUND_TWO);
+				return;
 			}
 
-			isRanged = !isRanged;
-			counter = ROTATION_DURATION;
+			if (counter == 1000) {
+				//playSoundClip(SOUND_ONE);
+				return;
+			}
+
+			//if(config.autoDmgPrays()) {
+
+
+
+			if (counter <= 0) {
+				if (isRanged) {
+					playSoundClip(SOUND_MAGE);
+					panel.setStyle("Mage", Color.CYAN);
+					targetPrayer = "magic";
+					//setPrayer("magic");
+				} else {
+					playSoundClip(SOUND_RANGE);
+					panel.setStyle("Ranged", Color.GREEN);
+					targetPrayer = "ranged";
+					//setPrayer("ranged");
+				}
+
+				isRanged = !isRanged;
+				counter = ROTATION_DURATION;
+			}
+		}
+		catch (Exception e) {
+			log.error("error: " + e);
 		}
 	}
 
 	private void setPrayer(String targetPrayer)
 	{
-		clientThread.invoke(() ->
-		{
+		waitTicks = 1;
+
+		//clientThread.invoke(() ->
+		//{
 			Widget activeWidget = getActiveWidget();
 
 			// Prayer icon
 			Widget PRAYER_ICON = client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 70);
-
+			log.info("prayericon null = " + (PRAYER_ICON == null));
 			executorService.submit(() -> clickAndDrawPoint(PRAYER_ICON, false));
-
-			Widget PROTECT_FROM_MAGIC = this.client.getWidget(541, 21);
-			Widget PROTECT_FROM_RANGED = this.client.getWidget(541, 22);
-			//Widget PROTECT_FROM_MELEE = this.client.getWidget(541, 23);
-
 
 				switch (targetPrayer)
 				{
 					case "magic":
-						executorService.submit(() -> clickAndDrawPoint(PROTECT_FROM_MAGIC, false));
+						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 21), false));
 						break;
+
 					case "ranged":
-						executorService.submit(() -> clickAndDrawPoint(PROTECT_FROM_RANGED, false));
+						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 22), false));
+						break;
+
+					case "eagle_eye":
+						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 29), false));
+						break;
+
+					case "mystic_might":
+						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 32), false));
 						break;
 				}
 
 			if (activeWidget != null)
 				executorService.submit(() -> clickAndDrawPoint(activeWidget, false));
-		});
+		//});
 	}
 
 	private void clickAndDrawPoint(Widget widgetToClick, boolean simulateOnly)
