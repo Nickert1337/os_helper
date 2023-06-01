@@ -1,5 +1,6 @@
 package com.hunllef;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.inject.Provides;
 
 import static com.hunllef.PluginConstants.ATTACK_DURATION;
@@ -13,13 +14,20 @@ import static com.hunllef.PluginConstants.SOUND_RANGE;
 import static com.hunllef.PluginConstants.SOUND_TWO;
 
 import com.hunllef.mappers.WidgetID;
+import com.hunllef.objects.Tornado;
 import com.hunllef.ui.HunllefPluginPanel;
+import lombok.Getter;
+import net.runelite.api.events.NpcDespawned;
+import net.runelite.client.ui.overlay.OverlayManager;
 
 import net.runelite.api.*;
 import net.runelite.api.Point;
 
 import java.awt.*;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +39,9 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Player;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.AnimationChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.NpcSpawned;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -67,6 +77,13 @@ public class HunllefPlugin extends Plugin
 	@Inject
 	private ClientThread clientThread;
 
+	@Inject
+	private OverlayManager overlayManager;
+
+	@Inject
+	private HunllefOverlay overlay;
+
+
 	private HunllefPluginPanel panel;
 
 	private ScheduledExecutorService executorService;
@@ -83,15 +100,52 @@ public class HunllefPlugin extends Plugin
 	private int waitTicks = 0;
 
 	private Item lastWeapon = null;
+	private boolean steelSkinWasDisabled = false;
 	private boolean running = false;
+
+	private String protectionToEnable = "";
+	private String offensiveToEnable = "";
+	private String defenseToEnable = "";
+
+	private int attacks = 0;
 
 	private NavigationButton navigationButton;
 
+	private static final Set<Integer> TORNADO_NPC_IDS = ImmutableSet.of(9025, 9039);
+	private static final int BOW_ATTACK = 426;
+	private static final int STAFF_ATTACK = 1167;
+	//private static final int LIGHTNING_ANIMATION = 8418;
+	private static final Set<Integer> MELEE_ATTACK = ImmutableSet.of(395, 401, 400, 401, 386, 390, 422, 423, 401, 428, 440);
+	private static final Set<Integer> CRYSTAL_BOWS = ImmutableSet.of(ItemID.CRYSTAL_BOW_PERFECTED, ItemID.CRYSTAL_BOW_ATTUNED, ItemID.CRYSTAL_BOW_BASIC,  ItemID.CORRUPTED_BOW_PERFECTED,  ItemID.CORRUPTED_BOW_ATTUNED, ItemID.CORRUPTED_BOW_BASIC);
+	private static final Set<Integer> CRYSTAL_STAFF = ImmutableSet.of(ItemID.CRYSTAL_STAFF_PERFECTED, ItemID.CRYSTAL_STAFF_ATTUNED, ItemID.CORRUPTED_STAFF_BASIC, ItemID.CORRUPTED_STAFF_PERFECTED, ItemID.CORRUPTED_STAFF_ATTUNED, ItemID.CORRUPTED_STAFF_BASIC);
+
+
+			/*
+			if ((newWeapon.getId() == ItemID.CRYSTAL_BOW_PERFECTED || newWeapon.getId() == ItemID.CRYSTAL_BOW_ATTUNED || newWeapon.getId() == ItemID.CRYSTAL_BOW_BASIC
+						|| newWeapon.getId() == ItemID.CORRUPTED_BOW_PERFECTED || newWeapon.getId() == ItemID.CORRUPTED_BOW_ATTUNED || newWeapon.getId() == ItemID.CORRUPTED_BOW_BASIC)) {
+					offensiveToEnable = "eagle_eye";
+				} else if ((newWeapon.getId() == ItemID.CRYSTAL_STAFF_PERFECTED || newWeapon.getId() == ItemID.CRYSTAL_STAFF_ATTUNED || newWeapon.getId() == ItemID.CRYSTAL_STAFF_BASIC
+						|| newWeapon.getId() == ItemID.CORRUPTED_STAFF_PERFECTED || newWeapon.getId() == ItemID.CORRUPTED_STAFF_ATTUNED || newWeapon.getId() == ItemID.CORRUPTED_STAFF_BASIC)) {
+					offensiveToEnable = "mystic_might";
+				}
+			 */
+
+	//private static final Set<Integer> PLAYER_ANIMATIONS = ImmutableSet.of(395, 401, 400, 401, 386, 390, 422, 423, 401, 428, 440, 426, 1167);
+
+	@Getter
+	private Set<Tornado> tornadoes = new HashSet<>();
+
+	/*
+		8754 mage
+		8755 range
+	 */
 	@Override
 	protected void startUp() throws Exception
 	{
 		audioPlayer.tryLoadAudio(config, new String[]{SOUND_MAGE, SOUND_RANGE, SOUND_ONE, SOUND_TWO});
 		audioMode = config.audioMode();
+
+		overlayManager.add(overlay);
 
 		panel = injector.getInstance(HunllefPluginPanel.class);
 
@@ -117,14 +171,80 @@ public class HunllefPlugin extends Plugin
 		panel = null;
 		navigationButton = null;
 		audioPlayer.unloadAudio();
+		overlayManager.remove(overlay);
+	}
+
+	@Subscribe
+	public void onAnimationChanged(AnimationChanged animationChanged) {
+		if(!running) {
+			return;
+		}
+
+		final Actor actor = animationChanged.getActor();
+		if(actor instanceof Player) {
+			final Player player = (Player) actor;
+			final int anim = player.getAnimation();
+
+			if (player.getName() == null || client.getLocalPlayer() == null || !player.getName().equals(client.getLocalPlayer().getName()) || anim == -1)
+			{
+				return;
+			}
+
+			switch(anim) {
+				case BOW_ATTACK:
+				case STAFF_ATTACK:
+					attacks++;
+					break;
+
+				default:
+					//TODO: check if attack really goes through all anims, only count 1 as attack.. otherwise it will switch right away
+					if(MELEE_ATTACK.contains(anim)) {
+						attacks++;
+					}
+					break;
+			}
+		}
+	}
+
+	@Subscribe
+	public void onNpcSpawned(NpcSpawned event)
+	{
+		final NPC npc = event.getNpc();
+		if (TORNADO_NPC_IDS.contains(npc.getId()))
+		{
+			tornadoes.add(new Tornado(npc));
+		}
+	}
+
+	@Subscribe
+	private void onNpcDespawned(NpcDespawned event)
+	{
+		final NPC npc = event.getNpc();
+		if (TORNADO_NPC_IDS.contains(npc.getId()))
+		{
+			tornadoes.removeIf(tornado -> tornado.getNpc() == npc);
+		}
+	}
+
+	private Item GetWeapon() {
+		return client.getItemContainer(InventoryID.INVENTORY).getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+	}
+
+	private void SwitchWeapon() {
+		Item newWeapon = Arrays.stream(client.getItemContainer(InventoryID.INVENTORY).getItems()).filter(i -> CRYSTAL_BOWS.contains(i.getId()) || CRYSTAL_STAFF.contains(i.getId())).findFirst().get();
+		equipItem(newWeapon);
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick tick)
 	{
-		if (!config.autoHide())
-		{
+		if (!config.autoHide()) {
 			return;
+		}
+
+		if (!tornadoes.isEmpty())
+		{
+			tornadoes.forEach(Tornado::updateTimeLeft);
 		}
 
 		boolean isInInstance = isInTheGauntlet();
@@ -134,36 +254,53 @@ public class HunllefPlugin extends Plugin
 			wasInInstance = isInInstance;
 		}
 
+		if(config.autoSwitchWeapons()) {
+			if(attacks >= 6) {
+				SwitchWeapon();
+				attacks = 0;
+			}
+		}
+
 		protectFromMissilesActivated = client.getLocalPlayer().getOverheadIcon() == HeadIcon.RANGED;
 		protectFromMagicActivated = client.getLocalPlayer().getOverheadIcon() == HeadIcon.MAGIC;
 
-		log.info("pfr=" + protectFromMissilesActivated + " pfm=" + protectFromMagicActivated);
 		if(waitTicks > 0) {
 			waitTicks--;
 			return;
 		}
 
 		if(running) {
-			Item newWeapon = client.getItemContainer(InventoryID.EQUIPMENT).getItem(EquipmentInventorySlot.WEAPON.getSlotIdx());
+			/*if(!client.isPrayerActive(Prayer.STEEL_SKIN)) {
+				if(steelSkinWasDisabled) {
+					defenseToEnable = "steel_skin";
+					steelSkinWasDisabled = false;
+				} else {
+					steelSkinWasDisabled = true;
+				}
+			}*/
 
+			Item newWeapon = GetWeapon();
 			if (newWeapon != null && (lastWeapon == null || (lastWeapon != null && lastWeapon.getId() != newWeapon.getId()))) {
 				lastWeapon = newWeapon;
-				if ((newWeapon.getId() == ItemID.CRYSTAL_BOW_PERFECTED || newWeapon.getId() == ItemID.CRYSTAL_BOW_ATTUNED || newWeapon.getId() == ItemID.CRYSTAL_BOW_BASIC
-						|| newWeapon.getId() == ItemID.CORRUPTED_BOW_PERFECTED || newWeapon.getId() == ItemID.CORRUPTED_BOW_ATTUNED || newWeapon.getId() == ItemID.CORRUPTED_BOW_BASIC)) {
-					setPrayer("eagle_eye");
-				} else if ((newWeapon.getId() == ItemID.CRYSTAL_STAFF_PERFECTED || newWeapon.getId() == ItemID.CRYSTAL_STAFF_ATTUNED || newWeapon.getId() == ItemID.CRYSTAL_STAFF_BASIC
-						|| newWeapon.getId() == ItemID.CORRUPTED_STAFF_PERFECTED || newWeapon.getId() == ItemID.CORRUPTED_STAFF_ATTUNED || newWeapon.getId() == ItemID.CORRUPTED_STAFF_BASIC)) {
-					setPrayer("mystic_might");
+				final int newId = newWeapon.getId();
+				if(CRYSTAL_BOWS.contains(newId)) {
+					offensiveToEnable = "eagle_eye";
+				} else if(CRYSTAL_STAFF.contains(newId)) {
+					offensiveToEnable = "mystic_might";
 				}
 			}
 			//}
 
 			if (config.autoPray()) {
 				if (targetPrayer == "magic" && !protectFromMagicActivated) {
-					setPrayer("magic");
+					protectionToEnable = "magic";
 				} else if (targetPrayer == "ranged" && !protectFromMissilesActivated) {
-					setPrayer("ranged");
+					protectionToEnable = "ranged";
 				}
+			}
+
+			if(protectionToEnable != "" || offensiveToEnable != "" || defenseToEnable != "") {
+				setPrayers();
 			}
 		}
 	}
@@ -196,6 +333,7 @@ public class HunllefPlugin extends Plugin
 		}
 		panel.setCounterActiveState(true);
 		counter = INITIAL_COUNTER;
+		attacks = 1;
 
 		executorService = Executors.newSingleThreadScheduledExecutor();
 		executorService.scheduleAtFixedRate(this::tickCounter, 0, COUNTER_INTERVAL, TimeUnit.MILLISECONDS);
@@ -238,16 +376,14 @@ public class HunllefPlugin extends Plugin
 
 			//if(config.autoDmgPrays()) {
 
-
-
 			if (counter <= 0) {
 				if (isRanged) {
-					playSoundClip(SOUND_MAGE);
+					//playSoundClip(SOUND_MAGE);
 					panel.setStyle("Mage", Color.CYAN);
 					targetPrayer = "magic";
 					//setPrayer("magic");
 				} else {
-					playSoundClip(SOUND_RANGE);
+					//playSoundClip(SOUND_RANGE);
 					panel.setStyle("Ranged", Color.GREEN);
 					targetPrayer = "ranged";
 					//setPrayer("ranged");
@@ -262,40 +398,68 @@ public class HunllefPlugin extends Plugin
 		}
 	}
 
-	private void setPrayer(String targetPrayer)
-	{
+	private void equipItem(Item item) {
+		Widget activeWidget = getActiveWidget();
+		if (activeWidget.getId() != WidgetID.INVENTORY_GROUP_ID) {
+			Widget PRAYER_ICON = client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 61);
+			executorService.submit(() -> clickAndDrawPoint(PRAYER_ICON, false));
+		}
+
+		Widget itemWidget = extUtils.getItems(item.getId()).stream().findFirst().get();
+		if(itemWidget == null) {
+			return;
+		}
+
+		executorService.submit(() -> clickAndDrawPoint(itemWidget, false));
+	}
+
+
+	private void setPrayers() {
 		waitTicks = 1;
 
 		//clientThread.invoke(() ->
 		//{
-			Widget activeWidget = getActiveWidget();
 
-			// Prayer icon
+		Widget activeWidget = getActiveWidget();
+
+		if (activeWidget.getId() != WidgetID.PRAYER_GROUP_ID) {
 			Widget PRAYER_ICON = client.getWidget(WidgetID.RESIZABLE_VIEWPORT_OLD_SCHOOL_BOX_GROUP_ID, 70);
-			log.info("prayericon null = " + (PRAYER_ICON == null));
 			executorService.submit(() -> clickAndDrawPoint(PRAYER_ICON, false));
+		}
 
-				switch (targetPrayer)
-				{
-					case "magic":
-						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 21), false));
-						break;
+		String[] allToEnable = new String[]{offensiveToEnable, protectionToEnable, defenseToEnable};
+		for (String enable : allToEnable) {
 
-					case "ranged":
-						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 22), false));
-						break;
 
-					case "eagle_eye":
-						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 29), false));
-						break;
+			switch (enable) {
+				case "magic":
+					executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 21), false));
+					break;
 
-					case "mystic_might":
-						executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 32), false));
-						break;
-				}
+				case "ranged":
+					executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 22), false));
+					break;
 
-			if (activeWidget != null)
-				executorService.submit(() -> clickAndDrawPoint(activeWidget, false));
+				case "eagle_eye":
+					executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 29), false));
+					break;
+
+				case "mystic_might":
+					executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 32), false));
+					break;
+
+				case "steel_skin":
+					executorService.submit(() -> clickAndDrawPoint(this.client.getWidget(541, 18), false));
+					break;
+			}
+		}
+
+		offensiveToEnable = "";
+		protectionToEnable = "";
+		defenseToEnable = "";
+
+		if (activeWidget != null)
+			executorService.submit(() -> clickAndDrawPoint(activeWidget, false));
 		//});
 	}
 

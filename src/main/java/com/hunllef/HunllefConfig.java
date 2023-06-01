@@ -72,4 +72,15 @@ public interface HunllefConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+			position = 7,
+			keyName = "prayer",
+			name = "Auto switch weapons",
+			description = ""
+	)
+	default boolean autoSwitchWeapons()
+	{
+		return true;
+	}
 }
